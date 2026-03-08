@@ -3,6 +3,7 @@ import { DollarSign, Plus, Filter, ArrowUpRight, ArrowDownRight, Upload, Image a
 import { useFinances, PaymentMethod, PaymentType } from '../hooks/useFinances';
 import { usePlayers } from '../hooks/usePlayers';
 import { Modal } from '../components/ui/Modal';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { motion } from 'motion/react';
 
 export function Finances() {
@@ -10,6 +11,8 @@ export function Finances() {
   const { players } = usePlayers();
   const [activeTab, setActiveTab] = useState<'all' | 'Inscripción' | 'Arbitraje' | 'Tarjeta'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     playerId: '',
     league: '',
@@ -43,13 +46,23 @@ export function Finances() {
     const player = players.find(p => p.id === formData.playerId);
     if (!player) return;
 
+    const amount = parseFloat(formData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('El monto debe ser un número mayor a 0');
+      return;
+    }
+    if (amount > 10000) {
+      alert('El monto parece excesivo. Por favor verifica.');
+      return;
+    }
+
     addPayment({
       playerId: player.id,
       playerName: player.name,
       league: formData.league,
       description: formData.description,
       type: formData.type,
-      amount: parseFloat(formData.amount),
+      amount: amount,
       method: formData.method,
       date: formData.date,
       status: formData.status,
@@ -68,6 +81,18 @@ export function Finances() {
       status: 'Pagado',
       captureUrl: null
     });
+  };
+
+  const confirmDelete = (id: string) => {
+    setPaymentToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDelete = () => {
+    if (paymentToDelete) {
+      deletePayment(paymentToDelete);
+      setPaymentToDelete(null);
+    }
   };
 
   const handleCaptureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,15 +162,15 @@ export function Finances() {
       </div>
 
       <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
-        <div className="p-4 border-b border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0 w-full sm:w-auto">
+        <div className="p-4 border-b border-slate-800 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+          <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0 w-full xl:w-auto scrollbar-hide">
             {['all', 'Inscripción', 'Arbitraje', 'Tarjeta'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === tab
-                    ? 'bg-red-600 text-white'
+                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/20'
                     : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
@@ -155,7 +180,8 @@ export function Finances() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-900/50 border-b border-slate-800">
@@ -168,7 +194,7 @@ export function Finances() {
             </thead>
             <tbody className="divide-y divide-slate-800">
               {filteredPayments.map((payment) => (
-                <tr key={payment.id} className="hover:bg-slate-900/30 transition-colors">
+                <tr key={payment.id} className="hover:bg-slate-900/30 transition-colors group">
                   <td className="px-6 py-4">
                     <p className="font-medium text-white">{payment.playerName}</p>
                     <p className="text-xs text-slate-500">{payment.league}</p>
@@ -208,8 +234,8 @@ export function Finances() {
                         {payment.status}
                       </span>
                       <button 
-                        onClick={() => deletePayment(payment.id)}
-                        className="p-1 text-slate-600 hover:text-red-400 transition-colors"
+                        onClick={() => confirmDelete(payment.id)}
+                        className="p-1 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -219,6 +245,60 @@ export function Finances() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden divide-y divide-slate-800">
+          {filteredPayments.map((payment) => (
+            <div key={payment.id} className="p-4 space-y-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-bold text-white">{payment.playerName}</p>
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{payment.league}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-white font-black text-lg">${payment.amount.toFixed(2)}</p>
+                  <p className="text-[10px] text-slate-500 uppercase">{payment.method}</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/50 rounded-xl p-3 border border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="px-2 py-0.5 bg-slate-800 text-slate-300 text-[10px] rounded font-bold uppercase">{payment.type}</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    payment.status === 'Pagado' 
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  }`}>
+                    {payment.status}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">{payment.description}</p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                {payment.captureUrl ? (
+                  <a 
+                    href={payment.captureUrl} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex items-center gap-2 text-blue-400 text-xs font-bold"
+                  >
+                    <ImageIcon size={14} />
+                    <span>Ver Comprobante</span>
+                  </a>
+                ) : (
+                  <span className="text-slate-600 text-xs italic">Sin comprobante</span>
+                )}
+                <button 
+                  onClick={() => confirmDelete(payment.id)}
+                  className="p-2 bg-slate-900 border border-slate-800 text-red-500/70 rounded-xl"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -368,6 +448,15 @@ export function Finances() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+        title="¿Eliminar Registro de Pago?"
+        message="Esta acción no se puede deshacer. El registro de este pago se eliminará permanentemente de las finanzas del club."
+        confirmText="Eliminar Pago"
+      />
     </motion.div>
   );
 }

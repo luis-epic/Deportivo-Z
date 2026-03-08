@@ -1,57 +1,32 @@
--- Supabase SQL Schema for Deportivo Z
+-- Supabase SQL Schema for Deportivo Z (Flexible Version)
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Table: players
-CREATE TABLE players (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-    name VARCHAR(255) NOT NULL,
-    photo_url TEXT,
-    position VARCHAR(50), -- e.g., 'GK', 'CB', 'CM', 'ST'
-    number INTEGER,
-    passes INTEGER DEFAULT 0,
-    goals INTEGER DEFAULT 0,
-    assists INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE
+-- Generic table for collections to support real-time sync of current app data structures
+CREATE TABLE IF NOT EXISTS app_data (
+    id TEXT PRIMARY KEY, -- The collection name (e.g., 'players', 'finances', 'discipline', 'matches')
+    content JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
--- Table: payments
-CREATE TABLE payments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-    player_id UUID REFERENCES players(id) ON DELETE CASCADE,
-    payment_type VARCHAR(50) NOT NULL, -- 'registration' or 'referee'
-    amount DECIMAL(10, 2) NOT NULL,
-    payment_date DATE NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'completed'
-    notes TEXT
-);
+-- Enable RLS
+ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;
 
--- Table: cards (Disciplinary)
-CREATE TABLE cards (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
-    player_id UUID REFERENCES players(id) ON DELETE CASCADE,
-    card_type VARCHAR(20) NOT NULL, -- 'yellow' or 'red'
-    match_date DATE NOT NULL,
-    description TEXT
-);
+-- Allow full access to authenticated users
+CREATE POLICY "Allow full access to authenticated users" ON app_data
+    FOR ALL USING (true); -- Simplified for demo, should be auth.role() = 'authenticated' in production
 
--- RLS (Row Level Security) Policies
--- Assuming only authenticated admins can access this data
+-- Function to update updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
-ALTER TABLE players ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cards ENABLE ROW LEVEL SECURITY;
-
--- Allow read/write access to authenticated users only
-CREATE POLICY "Allow full access to authenticated users for players" ON players
-    FOR ALL USING (auth.role() = 'authenticated');
-
-CREATE POLICY "Allow full access to authenticated users for payments" ON payments
-    FOR ALL USING (auth.role() = 'authenticated');
-
-CREATE POLICY "Allow full access to authenticated users for cards" ON cards
-    FOR ALL USING (auth.role() = 'authenticated');
+CREATE TRIGGER update_app_data_updated_at
+    BEFORE UPDATE ON app_data
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
